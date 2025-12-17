@@ -39,7 +39,7 @@ const SplashCursor: React.FC<SplashCursorProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    function pointerPrototype() {
+    function pointerPrototype(this: any) {
       this.id = -1;
       this.texcoordX = 0;
       this.texcoordY = 0;
@@ -71,67 +71,6 @@ const SplashCursor: React.FC<SplashCursorProps> = ({
     };
 
     let pointers = [new (pointerPrototype as any)()];
-
-    const { gl, ext } = getWebGLContext(canvas);
-
-    if (!ext.supportLinearFiltering) {
-      config.DYE_RESOLUTION = 512;
-      config.SHADING = false;
-    }
-
-    function getWebGLContext(canvas: HTMLCanvasElement) {
-      const params = {
-        alpha: true,
-        depth: false,
-        stencil: false,
-        antialias: false,
-        preserveDrawingBuffer: false,
-      };
-
-      let gl = canvas.getContext('webgl2', params) as WebGL2RenderingContext;
-      const isWebGL2 = !!gl;
-      if (!isWebGL2)
-        gl = (canvas.getContext('webgl', params) ||
-          canvas.getContext('experimental-webgl', params)) as WebGLRenderingContext;
-
-      let halfFloat;
-      let supportLinearFiltering;
-      if (isWebGL2) {
-        gl.getExtension('EXT_color_buffer_float');
-        supportLinearFiltering = gl.getExtension('OES_texture_float_linear');
-      } else {
-        halfFloat = gl.getExtension('OES_texture_half_float');
-        supportLinearFiltering = gl.getExtension('OES_texture_half_float_linear');
-      }
-
-      gl.clearColor(0.0, 0.0, 0.0, 1.0);
-
-      const halfFloatTexType = isWebGL2 ? gl.HALF_FLOAT : halfFloat && halfFloat.HALF_FLOAT_OES || 0x8d61;
-      let formatRGBA;
-      let formatRG;
-      let formatR;
-
-      if (isWebGL2) {
-        formatRGBA = getSupportedFormat(gl, gl.RGBA16F, gl.RGBA, halfFloatTexType);
-        formatRG = getSupportedFormat(gl, gl.RG16F, gl.RG, halfFloatTexType);
-        formatR = getSupportedFormat(gl, gl.R16F, gl.RED, halfFloatTexType);
-      } else {
-        formatRGBA = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
-        formatRG = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
-        formatR = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
-      }
-
-      return {
-        gl,
-        ext: {
-          formatRGBA,
-          formatRG,
-          formatR,
-          halfFloatTexType,
-          supportLinearFiltering,
-        },
-      };
-    }
 
     function getSupportedFormat(gl: any, internalFormat: any, format: any, type: any): any {
       if (!supportRenderTextureFormat(gl, internalFormat, format, type)) {
@@ -168,12 +107,86 @@ const SplashCursor: React.FC<SplashCursorProps> = ({
       return status === gl.FRAMEBUFFER_COMPLETE;
     }
 
+    const { gl, ext } = getWebGLContext(canvas);
+
+    if (isWebGLContext(gl) && ext) {
+       if (!ext.supportLinearFiltering) {
+        config.DYE_RESOLUTION = 512;
+        config.SHADING = false;
+      }
+      return startAnimation(gl, ext);
+    }
+
+    function isWebGLContext(gl: any): gl is WebGL2RenderingContext | WebGLRenderingContext {
+        return gl !== null;
+    }
+
+    function getWebGLContext(canvas: HTMLCanvasElement) {
+      const params = {
+        alpha: true,
+        depth: false,
+        stencil: false,
+        antialias: false,
+        preserveDrawingBuffer: false,
+      };
+
+      let gl: WebGL2RenderingContext | WebGLRenderingContext | null = canvas.getContext('webgl2', params) as WebGL2RenderingContext | null;
+      const isWebGL2 = !!gl;
+      if (!isWebGL2)
+        gl = (canvas.getContext('webgl', params) ||
+          canvas.getContext('experimental-webgl', params)) as WebGLRenderingContext | null;
+
+      let halfFloat;
+      let supportLinearFiltering;
+      
+      if (!gl) return { gl: null, ext: null };
+
+      if (isWebGL2) {
+        gl.getExtension('EXT_color_buffer_float');
+        supportLinearFiltering = gl.getExtension('OES_texture_float_linear');
+      } else {
+        halfFloat = gl.getExtension('OES_texture_half_float');
+        supportLinearFiltering = gl.getExtension('OES_texture_half_float_linear');
+      }
+
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+      const halfFloatTexType = isWebGL2 ? (gl as WebGL2RenderingContext).HALF_FLOAT : halfFloat && halfFloat.HALF_FLOAT_OES || 0x8d61;
+      let formatRGBA;
+      let formatRG;
+      let formatR;
+
+      if (isWebGL2) {
+        const gl2 = gl as WebGL2RenderingContext;
+        formatRGBA = getSupportedFormat(gl2, gl2.RGBA16F, gl2.RGBA, halfFloatTexType);
+        formatRG = getSupportedFormat(gl2, gl2.RG16F, gl2.RG, halfFloatTexType);
+        formatR = getSupportedFormat(gl2, gl2.R16F, gl2.RED, halfFloatTexType);
+      } else {
+        const gl1 = gl as WebGLRenderingContext;
+        formatRGBA = getSupportedFormat(gl1, gl1.RGBA, gl1.RGBA, halfFloatTexType);
+        formatRG = getSupportedFormat(gl1, gl1.RGBA, gl1.RGBA, halfFloatTexType);
+        formatR = getSupportedFormat(gl1, gl1.RGBA, gl1.RGBA, halfFloatTexType);
+      }
+
+      return {
+        gl,
+        ext: {
+          formatRGBA,
+          formatRG,
+          formatR,
+          halfFloatTexType,
+          supportLinearFiltering,
+        },
+      };
+    }
+
+    function startAnimation(gl: WebGL2RenderingContext | WebGLRenderingContext, ext: any) {
     class Material {
       vertexShader: any;
       fragmentShaderSource: any;
       programs: any[];
       activeProgram: any;
-      uniforms: any[];
+      uniforms: any;
 
       constructor(vertexShader: any, fragmentShaderSource: any) {
         this.vertexShader = vertexShader;
@@ -1217,6 +1230,7 @@ const SplashCursor: React.FC<SplashCursorProps> = ({
       
       cancelAnimationFrame(animationId);
     };
+    } // End startAnimation
   }, [
     SIM_RESOLUTION,
     DYE_RESOLUTION,
